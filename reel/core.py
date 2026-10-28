@@ -205,7 +205,7 @@ def draw_persp(cv, img, quad, alpha=1.0, mode="over", tint=None):
     _comp(cv, out, x0, y0, alpha, mode, tint)
 
 
-# numpy runs (h, w, 3) op (h, w, 1) or (h, w, 3) op (3,) as millions of 3-element inner loops, ~5x slower than the
+# numpy runs (h, w, 3) op (h, w, 1) or (h, w, 3) op (3,) as millions of 3-element inner loops, 1.5-6x slower than the
 # same arithmetic on matching contiguous arrays. The compositing below builds those (same values, same dtypes).
 def _ch3(a):
     """(h, w) -> contiguous (h, w, 3) with the value in every channel."""
@@ -233,32 +233,46 @@ def _add(x, y):
     return np.add(x, y, out=x) if np.result_type(x, y) == x.dtype else x + y
 
 
+# Renders run one process per core and are memory-bound: big regions are composited a band of rows at a time, so
+# each band's temporaries stay in cache through all the passes over it.
+_BAND = 32
+
+
+def _bands(n):
+    return (slice(y, y + _BAND) for y in range(0, n, _BAND))
+
+
 def _comp(cv, out, x0, y0, alpha=1.0, mode="over", tint=None):
-    reg = cv[y0:y0 + out.shape[0], x0:x0 + out.shape[1]]
-    rgb, a = _rgb(out), out[..., 3]
-    if tint is not None:
-        col, k = tint
-        rgb = _add(_mul(rgb, 1 - k), _mul(_chmul(_ch3(a), np.asarray(col, np.float32)), k))
-    if alpha != 1.0:
-        rgb = _mul(rgb, alpha); a = a * alpha
-    if mode == "over":
-        reg *= _ch3(1 - a); reg += rgb
-    elif mode == "add":
-        reg += rgb
-    elif mode == "screen":
-        reg[:] = 1 - (1 - reg) * (1 - np.clip(rgb, 0, 1))
-    else:
+    if mode not in ("over", "add", "screen"):
         raise ValueError(f"blend mode {mode}")
+    reg = cv[y0:y0 + out.shape[0], x0:x0 + out.shape[1]]
+    for s in _bands(len(out)):
+        r, o = reg[s], out[s]
+        rgb, a = _rgb(o), o[..., 3]
+        if tint is not None:
+            col, k = tint
+            rgb = _add(_mul(rgb, 1 - k), _mul(_chmul(_ch3(a), np.asarray(col, np.float32)), k))
+        if alpha != 1.0:
+            rgb = _mul(rgb, alpha); a = a * alpha
+        if mode == "over":
+            r *= _ch3(1 - a); r += rgb
+        elif mode == "add":
+            r += rgb
+        else:
+            r[:] = 1 - (1 - r) * (1 - np.clip(rgb, 0, 1))
 
 
 def _mask_comp(reg, m, color, alpha=1.0, mode="over"):
     """Flat color through uint8 coverage m: reg * (1 - a) + color * a ("over", else reg + color * a), a = m / 255 * alpha,
     looked up per coverage level."""
     a = (_LEVELS * alpha)[:, None]
-    m3 = cv2.merge((m, m, m))
-    if mode == "over":
-        reg *= cv2.LUT(m3, np.repeat(1 - a, 3, 1)[None])
-    reg += cv2.LUT(m3, (np.asarray(color, np.float32) * a)[None])
+    keep = np.repeat(1 - a, 3, 1)[None]
+    add = (np.asarray(color, np.float32) * a)[None]
+    for s in _bands(len(m)):
+        m3, r = cv2.merge((m[s],) * 3), reg[s]
+        if mode == "over":
+            r *= cv2.LUT(m3, keep)
+        r += cv2.LUT(m3, add)
 
 
 def cover(cv, img, cx, cy, zoom=1.0, rot=0.0, alpha=1.0):
@@ -329,11 +343,11 @@ def glow_ellipse(cv, x, y, rx, ry, color, strength=1.0):
     y0, y1 = int(max(0, y - ry)), int(min(cv.shape[0], y + ry))
     if x1 <= x0 or y1 <= y0:
         return
-    xx = np.arange(x0, x1, dtype=np.float32)[None, :]
-    yy = np.arange(y0, y1, dtype=np.float32)[:, None]
-    d2 = ((xx - x) / rx) ** 2 + ((yy - y) / ry) ** 2
-    g = np.exp(-d2 * 4.0) * strength
-    cv[y0:y1, x0:x1] += _chmul(_ch3(g), np.asarray(color, np.float32))
+    dx = ((np.arange(x0, x1, dtype=np.float32)[None, :] - x) / rx) ** 2
+    dy = ((np.arange(y0, y1, dtype=np.float32)[:, None] - y) / ry) ** 2
+    reg, col = cv[y0:y1, x0:x1], np.asarray(color, np.float32)
+    for s in _bands(y1 - y0):
+        reg[s] += _chmul(_ch3(np.exp(-(dx + dy[s]) * 4.0) * strength), col)
 
 
 def vgrad(cv, top, bottom, y0=0, y1=H):
@@ -459,11 +473,16 @@ def apply_cam(cv, zoom=1.0, rot=0.0, dx=0.0, dy=0.0, cx=None, cy=None):
     return cv2.warpAffine(cv, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
 
-def bloom(cv, thresh=0.75, strength=0.6, radius=24):
+def _glare(cv, thresh, radius):
+    """What bloom adds, before its strength."""
     small = cv2.resize(cv, (W // 4, H // 4), interpolation=cv2.INTER_AREA)
     b = np.clip(small - thresh, 0, None)
     b = cv2.GaussianBlur(b, (0, 0), radius / 4)
-    cv += _mul(cv2.resize(b, (W, H), interpolation=cv2.INTER_LINEAR), strength)
+    return cv2.resize(b, (W, H), interpolation=cv2.INTER_LINEAR)
+
+
+def bloom(cv, thresh=0.75, strength=0.6, radius=24):
+    cv += _mul(_glare(cv, thresh, radius), strength)
 
 
 @lru_cache(maxsize=8)
@@ -478,11 +497,15 @@ def vignette(cv, k=0.35):
 
 def finish(cv, bloom_k=0.5, gamma=0.88, vig=0.32):
     """Bloom, vignette and gamma: the last step of a frame."""
-    if bloom_k:
-        bloom(cv, 0.72, bloom_k)
-    if vig:
-        vignette(cv, vig)
-    if gamma != 1.0:
-        # cv2.pow is 5x np.power, within a few float32 ulps of it (a pixel in ~10^5 lands 1/255 apart)
-        cv2.pow(np.clip(cv, 0, None, out=cv), gamma, dst=cv)
+    glare = _glare(cv, 0.72, 24) if bloom_k else None
+    v = _vig(vig) if vig else None
+    for s in _bands(len(cv)):
+        c = cv[s]
+        if glare is not None:
+            c += _mul(glare[s], bloom_k)
+        if v is not None:
+            c *= v[s]
+        if gamma != 1.0:
+            # cv2.pow is 5x np.power, within a few float32 ulps of it (a pixel in ~10^5 lands 1/255 apart)
+            cv2.pow(np.clip(c, 0, None, out=c), gamma, dst=c)
     return cv

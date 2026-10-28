@@ -1,5 +1,5 @@
 """reel's fast compositing paths against the plain numpy they replaced: the same bits, for float32 and float64 inputs."""
-import math, os, tempfile
+import atexit, math, os, shutil, tempfile
 from pathlib import Path
 
 import cv2
@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 _proj = Path(tempfile.mkdtemp())
+atexit.register(shutil.rmtree, _proj, True)
 (_proj / "song.wav").write_bytes(b"")  # only has to exist: duration is set
 (_proj / "video.toml").write_text('song = "song.wav"\nduration = 2.0\nsize = [320, 240]\n')
 _env = os.environ.get("REEL_PROJECT")
@@ -15,6 +16,7 @@ os.environ["REEL_PROJECT"] = str(_proj)
 try:
     import reel.core as C
     import reel.fx as FX
+    import reel.render as R
 finally:  # the end-to-end tests' subprocesses inherit os.environ
     if _env is None:
         del os.environ["REEL_PROJECT"]
@@ -281,3 +283,11 @@ def test_art(mode):
     path = _proj / f"art_{mode}.png"
     im.save(path)
     same(C.art(str(path)), ref_art(path))
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_frame_quantize(dtype, monkeypatch):
+    x = (np.random.default_rng(9).random((H, W, 3)) * 1.4 - 0.2).astype(dtype)
+    x[0, :4] = [126.5 / 255, 0.5, 1 / 255 * 0.5]  # ties and near-ties
+    monkeypatch.setattr(R, "_shots", type("shots", (), {"frame": staticmethod(lambda i: x)}))
+    same(R.frame(0), (np.clip(x, 0, 1) * 255 + 0.5).astype(np.uint8))

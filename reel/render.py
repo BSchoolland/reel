@@ -13,6 +13,7 @@ work/chunks-draft/), slowest first by the times of the last render there (times.
 import argparse, importlib.util, json, os, subprocess, sys, time
 import multiprocessing as mp
 from functools import partial
+from multiprocessing.util import Finalize
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -38,10 +39,14 @@ def shots():
 
 
 def frame(i):
-    f = np.clip(shots().frame(i), 0, 1)
-    f *= 255
-    f += 0.5
-    return f.astype(np.uint8)
+    f = shots().frame(i)
+    out = np.empty(f.shape, np.uint8)
+    for s in C._bands(len(f)):
+        b = np.clip(f[s], 0, 1)
+        b *= 255
+        b += 0.5
+        out[s] = b
+    return out
 
 
 def chunk_dir(draft=False):
@@ -69,15 +74,35 @@ def _close(p, what):
         raise RuntimeError(f"ffmpeg failed writing {what} (exit {p.returncode})")
 
 
+_draining = []  # this worker's last chunk (encoder, tmp, path): x264 is still encoding its lookahead
+
+
+def _drain():
+    while _draining:
+        p, tmp, path = _draining.pop()
+        if p.wait() != 0:
+            raise RuntimeError(f"ffmpeg failed writing {tmp} (exit {p.returncode})")
+        os.replace(tmp, path)
+
+
+def _worker_init():
+    Finalize(None, _drain, exitpriority=10)  # runs when the pool is closed and joined, not on terminate()
+
+
 def render_chunk(k, draft=False):
+    """Feed chunk k's frames to its encoder and return without waiting for x264 to drain its lookahead: that finishes
+    while this worker renders its next chunk."""
     a, b = k * CHUNK, min(C.NF, (k + 1) * CHUNK)
+    path = chunk_dir(draft) / f"c{k:03d}.mp4"
+    path.unlink(missing_ok=True)  # so a failed encode can't leave the last render's chunk behind
     tmp = chunk_dir(draft) / f"c{k:03d}.tmp.mp4"
     t0 = time.time()
     p = writer(tmp, draft)
     for i in range(a, b):
         p.stdin.write(frame(i))
-    _close(p, tmp)
-    os.replace(tmp, chunk_dir(draft) / f"c{k:03d}.mp4")
+    p.stdin.close()
+    _drain()
+    _draining.append((p, tmp, path))
     return k, time.time() - t0
 
 
@@ -88,10 +113,16 @@ def run_chunks(ks, procs=PROCS, draft=False):
     # slowest first, so the last chunks to finish are short ones; chunks with no time yet keep their order, in front
     ks = sorted(ks, key=lambda k: -times.get(k, float("inf")))
     t0 = time.time()
-    with mp.Pool(procs) as pool:
+    pool = mp.Pool(procs, initializer=_worker_init)
+    try:
         for k, dt in pool.imap_unordered(partial(render_chunk, draft=draft), ks):
             times[k] = round(dt, 2)
             print(f"chunk {k} {dt:.0f}s  ({time.time() - t0:.0f}s)", flush=True)
+    except BaseException:
+        pool.terminate()
+        raise
+    pool.close()
+    pool.join()  # each worker drains its last encoder as it exits
     tf.write_text(json.dumps({str(k): times[k] for k in sorted(times)}))
 
 
