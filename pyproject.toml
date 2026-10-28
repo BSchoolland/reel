@@ -1,0 +1,16 @@
+[project]
+name = "reel"
+version = "0.1.0"
+description = "Code-built music videos: frame engine, render driver, beat analysis, SFX, art queue, QA, delivery"
+requires-python = ">=3.10"
+dependencies = ["numpy", "opencv-python-headless", "pillow", "librosa", "tomli; python_version < '3.11'"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["reel"]
+
+[tool.setuptools.package-data]
+reel = ["fonts/*.ttf", "*.md"]
