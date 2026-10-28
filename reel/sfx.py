@@ -1,10 +1,11 @@
 """Quiet synthesized SFX under the song, and the mix the renders are muxed with.
 
     from reel import sfx
-    sfx.mix([(28.0, "click", 0.2, 0.0), (39.5, sfx.blast(2.0), 0.3, -0.2)], mutes=[(39.06, 39.52)])
+    sfx.mix([(28.0, "click", 0.2, 0.0), (39.5, sfx.blast(2.0), 0.3, -0.2)])
 
 A cue is (time, kind, gain, pan): kind is a name in KINDS or a mono float signal at SR; pan -1 (left) .. 1 (right).
-A mute hard-silences the song over [a, b] with millisecond fades (one beat of silence before a drop is a strong move).
+A mute hard-silences the song over [a, b] with millisecond fades. Don't use it for drama: dropouts in the music read as
+glitches. It's for trimming a song's own dead air.
 Writes work/mix.wav, which renders then use instead of the bare song.
 """
 import subprocess

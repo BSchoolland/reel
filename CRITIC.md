@@ -18,6 +18,7 @@ Judge it as the brief's audience would see it in their feed: would they stop scr
 Write {OUT}: first line exactly "Verdict: YES" or "Verdict: NO" to "Is this good enough to post as-is?", second line
 exactly "Score: <0-10>", then one or two sentences on why.
 Then: fidelity to the brief's idea, the jokes (do they land, is the timing right), the money shots (real motion?),
-character fidelity and animation, style consistency, sync to the music, the muted first 3 s, the ending, polish
+character fidelity and animation, style consistency, sync to the music (any point where the music cuts out is a
+defect: it plays as a glitch), the muted first 3 s, the ending, polish
 (legibility, cropping, seams, dead frames, compression). Rank the gaps by how much they matter. Separately list
 clear fixable bugs with timecodes. Under ~800 words.

@@ -45,7 +45,7 @@ Every earlier video scored 3–7. The same complaints come back each time, so de
   squash, stretch, lean, settle, overshoot. Backgrounds are parallax layers. The money shot is real motion with
   velocity, deceleration, contact squash, particles and shake. Run `reel.qa motion` and look at the stillest seconds.
 - **The climax is the weakest part.** It's what people remember. Spend the most motion and the best joke there, and
-  give the payoff gag time to land (a second or more, a beat of silence before it is a strong move: `sfx.mix` mutes).
+  give the payoff gag time to land (a second or more).
 - **Cuts that ignore the music.** Snap every cut to a measured onset (`B.snap`); use the grid only where there are no
   onsets. A grid 78 ms late made cuts miss the music for four versions of one video. Median shot ~1.2–1.5 s, varied.
 - **One gag held for the whole video gets old.** Each section gets its own idea.
@@ -54,8 +54,10 @@ Every earlier video scored 3–7. The same complaints come back each time, so de
 - **The muted first three seconds.** Feeds autoplay muted. Something must read and move from frame 0.
 - **Captions on screen long enough to read twice**, legible on a phone, and inside their box: text that spills out of
   its window or off the frame edge is the most common bug critics find. Check every caption and label at full size.
-- **A climax the music doesn't lift.** If the song has no drop where the payoff lands, make one: mute a beat before it
-  and slam back in with an impact (`sfx.mix` mutes + `blast`/`thud`), or a riser into it.
+- **A climax the music doesn't lift.** If the song has no drop where the payoff lands, build the hit on top of the
+  music: stacked impacts (`blast` + `thud` + `clang`), a riser into it, a camera slam.
+- **Never cut the music out.** No muted beats or dropouts, however dramatic they look on paper: viewers hear them as
+  glitches. The song plays straight through; `sfx.mix` mutes are for trimming a song's own silence, nothing else.
 - **Transformations that undo themselves.** Once a character changes form, it stays changed until the story says
   otherwise; and give it contrast against what it turns into (a pink galaxy on a pink galaxy vanishes).
 
