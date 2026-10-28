@@ -1,8 +1,8 @@
 # Goal: make reel renders as fast as they can be, without changing how directors use it
 
-You are working in ~/Projects/reel-opt, a git worktree of ~/Projects/reel on branch `optimize`. Nobody is watching
+You are working in ~/Projects/reel-opt-opus, a git worktree of ~/Projects/reel on branch `optimize-opus`. Nobody is watching
 and nobody answers questions: make every call yourself, and keep going until you've genuinely run out of
-worthwhile wins. Commit as you go on this branch (end messages with `Co-Authored-By: GPT-6.1 Sol via claude-router`).
+worthwhile wins. Commit as you go on this branch (end messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`).
 Never touch ~/Projects/reel itself: live videos import it right now.
 
 ## The constraint that matters
@@ -39,3 +39,9 @@ stays identical and it's not fragile (there's a GTX 1060, 6 GB); a 2D GPU port o
 Write RESULTS.md: before/after timings for both projects (full render, per frame, and the draft mode if you add it),
 where the time went (profile tables), each change with its measured win, the identity check numbers, and anything
 you tried that didn't pay off. Leave the branch committed and unmerged; Ben decides about merging.
+
+## You're not alone
+Another agent is doing this same goal in parallel in ~/Projects/reel-opt (don't read or touch it). Its renders will
+show up in `pgrep` too, so don't wait for a perfectly quiet box forever: benchmark when it's quiet, and if it hasn't
+been for 10 minutes, benchmark anyway and say so in RESULTS.md. The final head-to-head timings get re-run separately
+on a quiet machine, so correctness and real wins matter more than your own stopwatch.
