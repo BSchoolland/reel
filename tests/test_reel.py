@@ -93,6 +93,17 @@ def test_render_measure_deliver(proj):
     assert share.stat().st_size < 1024 * 1024
 
 
+def test_draft_is_half_size(proj):
+    out = proj / "draft.mp4"
+    run(proj, "reel.render", "out", str(out), "--draft")
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height:format=duration",
+                        "-of", "json", str(out)], capture_output=True, text=True, check=True)
+    info = json.loads(r.stdout)
+    assert (info["streams"][0]["width"], info["streams"][0]["height"]) == (160, 160)
+    assert abs(float(info["format"]["duration"]) - DUR) < 0.1
+    assert (proj / "work/chunks-draft/times.json").exists()
+
+
 def test_seed_is_stable_across_processes(proj):
     code = "import reel.core as C; print(C.seed('teal'))"
     a = [subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True, check=True, env=ENV).stdout

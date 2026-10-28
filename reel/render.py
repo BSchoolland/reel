@@ -2,15 +2,17 @@
 and, optionally, shot_of(i) -> shot index for the sheet labels. Its directory is put on sys.path.
 
     python -m reel.render out PATH [--chunks 3,4]   full master (or just those chunks re-rendered), muxed with the audio
+        [--draft]                                   the same frames encoded half size on a fast preset (check renders)
     python -m reel.render stills 1.2,40.5 [--dir D] full-size jpgs (default work/stills/)
     python -m reel.render sheet DIR [--step 0.5]    contact sheets, 30 labelled frames each
     python -m reel.render clip T0 T1 PATH           a short mp4 of [T0, T1) with audio
 
-Chunks are CHUNK frames each, rendered in PROCS processes (env PROCS, default 5) into work/chunks/, slowest first by
-the times of the last render (work/chunks/times.json).
+Chunks are CHUNK frames each, rendered in PROCS processes (env PROCS, default 5) into work/chunks/ (drafts:
+work/chunks-draft/), slowest first by the times of the last render there (times.json).
 """
 import argparse, importlib.util, json, os, subprocess, sys, time
 import multiprocessing as mp
+from functools import partial
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -42,8 +44,8 @@ def frame(i):
     return f.astype(np.uint8)
 
 
-def chunk_dir():
-    d = project().work / "chunks"
+def chunk_dir(draft=False):
+    d = project().work / ("chunks-draft" if draft else "chunks")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -52,12 +54,13 @@ def nchunks():
     return (C.NF + CHUNK - 1) // CHUNK
 
 
-def writer(path):
+def writer(path, draft=False):
+    # x264's default 1.5 threads per core cost 1.6x the CPU of 2 threads; chunks already run in parallel
+    enc = (["-vf", "scale=trunc(iw/4)*2:trunc(ih/4)*2:flags=area", "-preset", "veryfast", "-crf", "20", "-threads", "1"]
+           if draft else ["-preset", "medium", "-crf", "16", "-threads", "2"])
     return subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{C.W}x{C.H}",
-                             "-r", str(C.FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "16",
-                             "-pix_fmt", "yuv420p", "-g", str(C.FPS), "-bf", "2",
-                             # x264's default 1.5 threads per core cost 1.6x the CPU of 2 threads; chunks run in parallel
-                             "-threads", "2", str(path)], stdin=subprocess.PIPE)
+                             "-r", str(C.FPS), "-i", "-", "-c:v", "libx264", *enc, "-pix_fmt", "yuv420p",
+                             "-g", str(C.FPS), "-bf", "2", str(path)], stdin=subprocess.PIPE)
 
 
 def _close(p, what):
@@ -66,34 +69,34 @@ def _close(p, what):
         raise RuntimeError(f"ffmpeg failed writing {what} (exit {p.returncode})")
 
 
-def render_chunk(k):
+def render_chunk(k, draft=False):
     a, b = k * CHUNK, min(C.NF, (k + 1) * CHUNK)
-    tmp = chunk_dir() / f"c{k:03d}.tmp.mp4"
+    tmp = chunk_dir(draft) / f"c{k:03d}.tmp.mp4"
     t0 = time.time()
-    p = writer(tmp)
+    p = writer(tmp, draft)
     for i in range(a, b):
         p.stdin.write(frame(i))
     _close(p, tmp)
-    os.replace(tmp, chunk_dir() / f"c{k:03d}.mp4")
+    os.replace(tmp, chunk_dir(draft) / f"c{k:03d}.mp4")
     return k, time.time() - t0
 
 
-def run_chunks(ks, procs=PROCS):
+def run_chunks(ks, procs=PROCS, draft=False):
     shots()  # import once here so forked workers inherit it
-    tf = chunk_dir() / "times.json"
+    tf = chunk_dir(draft) / "times.json"
     times = {int(k): v for k, v in json.loads(tf.read_text()).items()} if tf.exists() else {}
     # slowest first, so the last chunks to finish are short ones; chunks with no time yet keep their order, in front
     ks = sorted(ks, key=lambda k: -times.get(k, float("inf")))
     t0 = time.time()
     with mp.Pool(procs) as pool:
-        for k, dt in pool.imap_unordered(render_chunk, ks):
+        for k, dt in pool.imap_unordered(partial(render_chunk, draft=draft), ks):
             times[k] = round(dt, 2)
             print(f"chunk {k} {dt:.0f}s  ({time.time() - t0:.0f}s)", flush=True)
     tf.write_text(json.dumps({str(k): times[k] for k in sorted(times)}))
 
 
-def concat_mux(out):
-    d = chunk_dir()
+def concat_mux(out, draft=False):
+    d = chunk_dir(draft)
     missing = [k for k in range(nchunks()) if not (d / f"c{k:03d}.mp4").exists()]
     if missing:
         raise FileNotFoundError(f"chunks never rendered: {missing}")
@@ -161,13 +164,14 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     o = sub.add_parser("out"); o.add_argument("path"); o.add_argument("--chunks")
+    o.add_argument("--draft", action="store_true")
     s = sub.add_parser("stills"); s.add_argument("times"); s.add_argument("--dir")
     h = sub.add_parser("sheet"); h.add_argument("dir"); h.add_argument("--step", type=float, default=0.5)
     c = sub.add_parser("clip"); c.add_argument("t0", type=float); c.add_argument("t1", type=float); c.add_argument("path")
     a = ap.parse_args(argv)
     if a.cmd == "out":
-        run_chunks([int(x) for x in a.chunks.split(",")] if a.chunks else list(range(nchunks())))
-        concat_mux(a.path)
+        run_chunks([int(x) for x in a.chunks.split(",")] if a.chunks else list(range(nchunks())), draft=a.draft)
+        concat_mux(a.path, a.draft)
     elif a.cmd == "stills":
         stills([float(x) for x in a.times.split(",")], a.dir)
     elif a.cmd == "sheet":

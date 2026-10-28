@@ -29,7 +29,7 @@ project directory, or set `REEL_PROJECT`.
 | `python -m reel.music [--bpm N]` | onsets + fitted beat grid -> work/audio.json. In code: `B = reel.music.beats()`, `B.snap(t)`, `B.beat(k)` |
 | `reel.sfx` | synthesized hits (`blast thud clang pop whoosh click spool hiss …`) and `sfx.mix(cues, mutes)` -> work/mix.wav |
 | `python -m reel.art gen NAME` / `queue FILE` | codex image generation with the per-cycle cap, the usage meter and auth guards |
-| `python -m reel.render out/stills/sheet/clip` | chunked parallel render muxed with the audio; stills; contact sheets; clips |
+| `python -m reel.render out/stills/sheet/clip` | chunked parallel render muxed with the audio (`out --draft`: the same frames, half size, fast encode); stills; contact sheets; clips |
 | `python -m reel.qa measure/motion/sheets VIDEO` | the critic's own numbers: cut rhythm, cuts on onsets, near-static frames, local motion |
 | `python -m reel.deliver MASTER OUT` | the share encode under 9.5 MB |
 
@@ -64,7 +64,8 @@ Every earlier video scored 3–7. The same complaints come back each time, so de
 - Look at every image you generate. Reject off-style ones and anything with a logo or text the brief didn't ask for.
   The image model redraws characters off-model; anything that must stay on-model is traced or cut out, not regenerated.
 - Check your own cut before you call it done: `render sheet`, full-size `stills` at the key moments, `qa measure`,
-  `qa motion`. The critic runs the same numbers.
+  `qa motion`. The critic runs the same numbers. Check renders are `render out work/draftN.mp4 --draft` (qa reads
+  them the same); render the master without `--draft`.
 - Randomness comes from fixed seeds (`np.random.RandomState(k)`, `C.seed("name")`). Never `hash()`: it changes every
   process, so chunks rendered in different processes disagree.
 - Every frame must render on its own from t alone. No state carried between frames; chunks render in parallel.
