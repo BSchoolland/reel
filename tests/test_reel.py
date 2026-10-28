@@ -6,6 +6,9 @@ import numpy as np
 import pytest
 
 PY = sys.executable
+# the subprocesses run from the test project, so put this checkout ahead of whatever reel the venv has installed
+REPO = str(Path(__file__).parents[1])
+ENV = {**os.environ, "PYTHONPATH": os.pathsep.join([REPO, os.environ.get("PYTHONPATH", "")])}
 BPM, DUR = 120, 6.0
 SHOTS = '''
 import reel.core as C
@@ -47,7 +50,7 @@ def proj(tmp_path_factory):
 
 
 def run(proj, *args):
-    r = subprocess.run([PY, "-m", *args], cwd=proj, capture_output=True, text=True, env={**os.environ, "PROCS": "2"})
+    r = subprocess.run([PY, "-m", *args], cwd=proj, capture_output=True, text=True, env={**ENV, "PROCS": "2"})
     assert r.returncode == 0, r.stderr
     return r.stdout
 
@@ -62,7 +65,7 @@ def test_music_finds_the_grid(proj):
 
 def test_mix_keeps_length_and_mutes(proj):
     code = ("from reel import sfx; sfx.mix([(1.0, 'thud', 0.3, 0.0), (2.0, 'pop', 0.2, 0.5)], mutes=[(3.2, 3.6)])")
-    r = subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True)
+    r = subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True, env=ENV)
     assert r.returncode == 0, r.stderr
     p = subprocess.run(["ffmpeg", "-v", "error", "-i", str(proj / "work/mix.wav"), "-f", "f32le", "-ac", "1", "-ar", "48000", "-"],
                        capture_output=True, check=True)
@@ -92,5 +95,6 @@ def test_render_measure_deliver(proj):
 
 def test_seed_is_stable_across_processes(proj):
     code = "import reel.core as C; print(C.seed('teal'))"
-    a = [subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True, check=True).stdout for _ in range(2)]
+    a = [subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True, check=True, env=ENV).stdout
+         for _ in range(2)]
     assert a[0] == a[1]

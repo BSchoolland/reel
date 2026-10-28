@@ -2,7 +2,7 @@
 shapes, glows, text, camera and finishing. A canvas is float32 RGB in [0, 1] at W x H.
 
 W, H, FPS, DUR and NF come from the project's video.toml (reel.project)."""
-import math, zlib
+import ctypes, math, sys, zlib
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,6 +10,17 @@ import numpy as np, cv2
 from PIL import Image, ImageDraw, ImageFont
 
 from .project import project
+
+# OpenCV's worker threads spin (sched_yield) after every parallel call: with renders running one process per core
+# they burned more CPU than the frames did, for no wall-clock gain.
+cv2.setNumThreads(1)
+if sys.platform.startswith("linux"):
+    # Frame-sized temporaries die every few calls; by default glibc unmaps them and page-faults them back in. Keep
+    # freed memory in the heap (allocations up to 32 MB, the most glibc allows).
+    _libc = ctypes.CDLL("libc.so.6")
+    for _k, _v in ((-3, 32 << 20), (-1, 1 << 30), (-2, 64 << 20)):  # M_MMAP_THRESHOLD, M_TRIM_THRESHOLD, M_TOP_PAD
+        if not _libc.mallopt(_k, _v):
+            raise OSError(f"mallopt({_k}, {_v}) failed")
 
 P = project()
 ROOT = str(P.root)
@@ -472,5 +483,6 @@ def finish(cv, bloom_k=0.5, gamma=0.88, vig=0.32):
     if vig:
         vignette(cv, vig)
     if gamma != 1.0:
-        np.power(np.clip(cv, 0, None, out=cv), gamma, out=cv)
+        # cv2.pow is 5x np.power, within a few float32 ulps of it (a pixel in ~10^5 lands 1/255 apart)
+        cv2.pow(np.clip(cv, 0, None, out=cv), gamma, dst=cv)
     return cv

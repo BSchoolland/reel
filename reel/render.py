@@ -55,7 +55,9 @@ def nchunks():
 def writer(path):
     return subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{C.W}x{C.H}",
                              "-r", str(C.FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "16",
-                             "-pix_fmt", "yuv420p", "-g", str(C.FPS), "-bf", "2", str(path)], stdin=subprocess.PIPE)
+                             "-pix_fmt", "yuv420p", "-g", str(C.FPS), "-bf", "2",
+                             # x264's default 1.5 threads per core cost 1.6x the CPU of 2 threads; chunks run in parallel
+                             "-threads", "2", str(path)], stdin=subprocess.PIPE)
 
 
 def _close(p, what):

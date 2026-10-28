@@ -239,10 +239,36 @@ def test_vgrad(span):
     same(a, b)
 
 
+@pytest.mark.parametrize("strength", SCALARS)
+def test_bloom(strength):
+    a, b = scene(6), scene(6)
+    C.bloom(a, 0.72, strength)
+    ref_bloom(b, 0.72, strength)
+    same(a, b)
+
+
+@pytest.mark.parametrize("k", [0.32, 0.28, np.float64(0.3)])
+def test_vignette(k):
+    a, b = scene(6), scene(6)
+    C.vignette(a, k)
+    ref_vignette(b, k)
+    same(a, b)
+
+
+def quantize(x):
+    return (np.clip(x, 0, 1) * 255 + 0.5).astype(np.uint8)
+
+
 @pytest.mark.parametrize("args", [(0.5, 0.88, 0.32), (0.4, 0.92, 0.28), (0.0, 1.0, 0.0), (np.float64(0.45), 0.9, 0.3)])
 def test_finish(args):
-    a, b = scene(6), scene(6)
-    same(C.finish(a, *args), ref_finish(b, *args))
+    """Everything but the gamma is bit-identical (above); cv2.pow is within float32 rounding of np.power."""
+    x = scene(6)
+    x[:10] = 0; x[10:20] = 1; x[20:30] = 2.5; x[30:31] = 1e-30
+    a, b = C.finish(x.copy(), *args), ref_finish(x.copy(), *args)
+    assert a.dtype == b.dtype
+    assert np.allclose(a, b, rtol=1e-6, atol=0)
+    d = np.abs(quantize(a).astype(int) - quantize(b))
+    assert d.max() <= 1 and (d > 0).mean() < 1e-4
 
 
 @pytest.mark.parametrize("mode", ["RGBA", "RGB", "P", "LA"])
