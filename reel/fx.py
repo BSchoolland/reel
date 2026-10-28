@@ -4,7 +4,7 @@ import math
 
 import numpy as np, cv2
 
-from .core import W, H, SUB, SHIFT, hexc, noise1, ease_out, glow, poly, circle
+from .core import W, H, SUB, SHIFT, hexc, noise1, ease_out, glow, poly, circle, _mask_comp
 
 PLUME_COLS = [hexc("#8b5cf6"), hexc("#ff7a1a"), hexc("#ffc23d"), hexc("#fff4dc")]
 
@@ -45,9 +45,7 @@ def puff(cv, x, y, r, color, alpha=1.0, seed=0, lobes=5):
     m = np.zeros((y1 - y0, x1 - x0), np.uint8)
     for cx, cy, rr in circ:
         cv2.circle(m, (int(round((cx - x0) * SUB)), int(round((cy - y0) * SUB))), int(rr * SUB), 255, -1, cv2.LINE_AA, SHIFT)
-    a = m.astype(np.float32)[..., None] / 255 * alpha
-    reg = cv[y0:y1, x0:x1]
-    reg *= (1 - a); reg += np.asarray(color, np.float32) * a
+    _mask_comp(cv[y0:y1, x0:x1], m, color, alpha)
 
 
 class Puffs:

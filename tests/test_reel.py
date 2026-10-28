@@ -6,6 +6,9 @@ import numpy as np
 import pytest
 
 PY = sys.executable
+# the subprocesses run from the test project, so put this checkout ahead of whatever reel the venv has installed
+REPO = str(Path(__file__).parents[1])
+ENV = {**os.environ, "PYTHONPATH": os.pathsep.join([REPO, os.environ.get("PYTHONPATH", "")])}
 BPM, DUR = 120, 6.0
 SHOTS = '''
 import reel.core as C
@@ -47,7 +50,7 @@ def proj(tmp_path_factory):
 
 
 def run(proj, *args):
-    r = subprocess.run([PY, "-m", *args], cwd=proj, capture_output=True, text=True, env={**os.environ, "PROCS": "2"})
+    r = subprocess.run([PY, "-m", *args], cwd=proj, capture_output=True, text=True, env={**ENV, "PROCS": "2"})
     assert r.returncode == 0, r.stderr
     return r.stdout
 
@@ -62,7 +65,7 @@ def test_music_finds_the_grid(proj):
 
 def test_mix_keeps_length_and_mutes(proj):
     code = ("from reel import sfx; sfx.mix([(1.0, 'thud', 0.3, 0.0), (2.0, 'pop', 0.2, 0.5)], mutes=[(3.2, 3.6)])")
-    r = subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True)
+    r = subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True, env=ENV)
     assert r.returncode == 0, r.stderr
     p = subprocess.run(["ffmpeg", "-v", "error", "-i", str(proj / "work/mix.wav"), "-f", "f32le", "-ac", "1", "-ar", "48000", "-"],
                        capture_output=True, check=True)
@@ -77,6 +80,8 @@ def test_render_measure_deliver(proj):
     dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
                                capture_output=True, text=True, check=True).stdout)
     assert abs(dur - DUR) < 0.1
+    times = json.loads((proj / "work/chunks/times.json").read_text())
+    assert sorted(times) == [str(k) for k in range((round(DUR * 30) + 59) // 60)], times
     m = run(proj, "reel.qa", "measure", str(out))
     assert "cuts=2 " in m, m
     assert "cuts on an onset (within 50 ms): 2/2" in m, m
@@ -88,7 +93,19 @@ def test_render_measure_deliver(proj):
     assert share.stat().st_size < 1024 * 1024
 
 
+def test_draft_is_half_size(proj):
+    out = proj / "draft.mp4"
+    run(proj, "reel.render", "out", str(out), "--draft")
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height:format=duration",
+                        "-of", "json", str(out)], capture_output=True, text=True, check=True)
+    info = json.loads(r.stdout)
+    assert (info["streams"][0]["width"], info["streams"][0]["height"]) == (160, 160)
+    assert abs(float(info["format"]["duration"]) - DUR) < 0.1
+    assert (proj / "work/chunks-draft/times.json").exists()
+
+
 def test_seed_is_stable_across_processes(proj):
     code = "import reel.core as C; print(C.seed('teal'))"
-    a = [subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True, check=True).stdout for _ in range(2)]
+    a = [subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True, check=True, env=ENV).stdout
+         for _ in range(2)]
     assert a[0] == a[1]

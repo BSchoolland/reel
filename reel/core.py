@@ -2,7 +2,7 @@
 shapes, glows, text, camera and finishing. A canvas is float32 RGB in [0, 1] at W x H.
 
 W, H, FPS, DUR and NF come from the project's video.toml (reel.project)."""
-import math, zlib
+import ctypes, math, sys, zlib
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,6 +10,17 @@ import numpy as np, cv2
 from PIL import Image, ImageDraw, ImageFont
 
 from .project import project
+
+# OpenCV's worker threads spin (sched_yield) after every parallel call: with renders running one process per core
+# they burned more CPU than the frames did, for no wall-clock gain.
+cv2.setNumThreads(1)
+if sys.platform.startswith("linux"):
+    # Frame-sized temporaries die every few calls; by default glibc unmaps them and page-faults them back in. Keep
+    # freed memory in the heap (allocations up to 32 MB, the most glibc allows).
+    _libc = ctypes.CDLL("libc.so.6")
+    for _k, _v in ((-3, 32 << 20), (-1, 1 << 30), (-2, 64 << 20)):  # M_MMAP_THRESHOLD, M_TRIM_THRESHOLD, M_TOP_PAD
+        if not _libc.mallopt(_k, _v):
+            raise OSError(f"mallopt({_k}, {_v}) failed")
 
 P = project()
 ROOT = str(P.root)
@@ -20,11 +31,13 @@ DUR = P.duration
 NF = P.nframes
 SHIFT = 4
 SUB = 1 << SHIFT
+_LEVELS = np.arange(256, dtype=np.float32) / 255  # uint8 v -> v / 255 in float32
 
 
 def canvas(color=(0, 0, 0)):
     c = np.empty((H, W, 3), np.float32)
-    c[:] = color
+    c[0] = color
+    c[1:] = c[0]
     return c
 
 
@@ -113,8 +126,9 @@ def _art_path(name):
 @lru_cache(maxsize=None)
 def art(name):
     """Premultiplied float RGBA of art/<name>.png, or of an absolute path (RGB images get alpha 1)."""
-    a = np.asarray(Image.open(_art_path(name)).convert("RGBA"), np.float32) / 255
-    a[..., :3] *= a[..., 3:4]
+    a = cv2.LUT(np.asarray(Image.open(_art_path(name)).convert("RGBA")), _LEVELS)
+    al = a[..., 3].copy()
+    a *= cv2.merge((al, al, al, np.ones_like(al)))
     return a
 
 
@@ -191,22 +205,74 @@ def draw_persp(cv, img, quad, alpha=1.0, mode="over", tint=None):
     _comp(cv, out, x0, y0, alpha, mode, tint)
 
 
+# numpy runs (h, w, 3) op (h, w, 1) or (h, w, 3) op (3,) as millions of 3-element inner loops, 1.5-6x slower than the
+# same arithmetic on matching contiguous arrays. The compositing below builds those (same values, same dtypes).
+def _ch3(a):
+    """(h, w) -> contiguous (h, w, 3) with the value in every channel."""
+    return cv2.merge((a, a, a))
+
+
+def _rgb(out):
+    """Contiguous copy of an (h, w, 4) image's first three channels."""
+    return cv2.cvtColor(out, cv2.COLOR_RGBA2RGB) if out.dtype == np.float32 else np.ascontiguousarray(out[..., :3])
+
+
+def _chmul(x, col):
+    """x * col for a contiguous (h, w, 3) x and a per-channel col."""
+    h, w = x.shape[:2]
+    return (x.reshape(h, w * 3) * np.tile(col, w)).reshape(h, w, 3)
+
+
+def _mul(x, k):
+    """x * k, in place when the result keeps x's dtype."""
+    return np.multiply(x, k, out=x) if np.result_type(x, k) == x.dtype else x * k
+
+
+def _add(x, y):
+    """x + y, in place when the result keeps x's dtype."""
+    return np.add(x, y, out=x) if np.result_type(x, y) == x.dtype else x + y
+
+
+# Renders run one process per core and are memory-bound: big regions are composited a band of rows at a time, so
+# each band's temporaries stay in cache through all the passes over it.
+_BAND = 32
+
+
+def _bands(n):
+    return (slice(y, y + _BAND) for y in range(0, n, _BAND))
+
+
 def _comp(cv, out, x0, y0, alpha=1.0, mode="over", tint=None):
-    reg = cv[y0:y0 + out.shape[0], x0:x0 + out.shape[1]]
-    rgb, a = out[..., :3], out[..., 3:4]
-    if tint is not None:
-        col, k = tint
-        rgb = rgb * (1 - k) + np.asarray(col, np.float32) * a * k
-    if alpha != 1.0:
-        rgb = rgb * alpha; a = a * alpha
-    if mode == "over":
-        reg *= (1 - a); reg += rgb
-    elif mode == "add":
-        reg += rgb
-    elif mode == "screen":
-        reg[:] = 1 - (1 - reg) * (1 - np.clip(rgb, 0, 1))
-    else:
+    if mode not in ("over", "add", "screen"):
         raise ValueError(f"blend mode {mode}")
+    reg = cv[y0:y0 + out.shape[0], x0:x0 + out.shape[1]]
+    for s in _bands(len(out)):
+        r, o = reg[s], out[s]
+        rgb, a = _rgb(o), o[..., 3]
+        if tint is not None:
+            col, k = tint
+            rgb = _add(_mul(rgb, 1 - k), _mul(_chmul(_ch3(a), np.asarray(col, np.float32)), k))
+        if alpha != 1.0:
+            rgb = _mul(rgb, alpha); a = a * alpha
+        if mode == "over":
+            r *= _ch3(1 - a); r += rgb
+        elif mode == "add":
+            r += rgb
+        else:
+            r[:] = 1 - (1 - r) * (1 - np.clip(rgb, 0, 1))
+
+
+def _mask_comp(reg, m, color, alpha=1.0, mode="over"):
+    """Flat color through uint8 coverage m: reg * (1 - a) + color * a ("over", else reg + color * a), a = m / 255 * alpha,
+    looked up per coverage level."""
+    a = (_LEVELS * alpha)[:, None]
+    keep = np.repeat(1 - a, 3, 1)[None]
+    add = (np.asarray(color, np.float32) * a)[None]
+    for s in _bands(len(m)):
+        m3, r = cv2.merge((m[s],) * 3), reg[s]
+        if mode == "over":
+            r *= cv2.LUT(m3, keep)
+        r += cv2.LUT(m3, add)
 
 
 def cover(cv, img, cx, cy, zoom=1.0, rot=0.0, alpha=1.0):
@@ -231,13 +297,7 @@ def poly(cv, pts, color, alpha=1.0, mode="over"):
         return
     m = np.zeros((y1 - y0, x1 - x0), np.uint8)
     cv2.fillPoly(m, [np.round((pts - [x0, y0]) * SUB).astype(np.int32)], 255, cv2.LINE_AA, SHIFT)
-    a = m.astype(np.float32)[..., None] / 255 * alpha
-    reg = cv[y0:y1, x0:x1]
-    col = np.asarray(color, np.float32)
-    if mode == "over":
-        reg *= (1 - a); reg += col * a
-    else:
-        reg += col * a
+    _mask_comp(cv[y0:y1, x0:x1], m, color, alpha, mode)
 
 
 def ellipse_pts(cx, cy, rx, ry, rot=0.0, n=64, a0=0.0, a1=2 * math.pi):
@@ -283,15 +343,22 @@ def glow_ellipse(cv, x, y, rx, ry, color, strength=1.0):
     y0, y1 = int(max(0, y - ry)), int(min(cv.shape[0], y + ry))
     if x1 <= x0 or y1 <= y0:
         return
-    yy, xx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
-    d2 = ((xx - x) / rx) ** 2 + ((yy - y) / ry) ** 2
-    g = np.exp(-d2 * 4.0) * strength
-    cv[y0:y1, x0:x1] += g[..., None] * np.asarray(color, np.float32)
+    dx = ((np.arange(x0, x1, dtype=np.float32)[None, :] - x) / rx) ** 2
+    dy = ((np.arange(y0, y1, dtype=np.float32)[:, None] - y) / ry) ** 2
+    reg, col = cv[y0:y1, x0:x1], np.asarray(color, np.float32)
+    for s in _bands(y1 - y0):
+        reg[s] += _chmul(_ch3(np.exp(-(dx + dy[s]) * 4.0) * strength), col)
 
 
 def vgrad(cv, top, bottom, y0=0, y1=H):
-    t = np.linspace(0, 1, y1 - y0, dtype=np.float32)[:, None, None]
-    cv[y0:y1] = np.asarray(top, np.float32) * (1 - t) + np.asarray(bottom, np.float32) * t
+    t = np.linspace(0, 1, y1 - y0, dtype=np.float32)[:, None]
+    rows = cv[y0:y1]
+    rows[:, 0] = np.asarray(top, np.float32) * (1 - t) + np.asarray(bottom, np.float32) * t
+    w = 1
+    while w < rows.shape[1]:  # double the filled columns: long contiguous copies
+        k = min(w, rows.shape[1] - w)
+        rows[:, w:w + k] = rows[:, :k]
+        w += k
 
 
 # ---------------------------------------------------------------- text
@@ -406,29 +473,39 @@ def apply_cam(cv, zoom=1.0, rot=0.0, dx=0.0, dy=0.0, cx=None, cy=None):
     return cv2.warpAffine(cv, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
 
-def bloom(cv, thresh=0.75, strength=0.6, radius=24):
+def _glare(cv, thresh, radius):
+    """What bloom adds, before its strength."""
     small = cv2.resize(cv, (W // 4, H // 4), interpolation=cv2.INTER_AREA)
     b = np.clip(small - thresh, 0, None)
     b = cv2.GaussianBlur(b, (0, 0), radius / 4)
-    cv += cv2.resize(b, (W, H), interpolation=cv2.INTER_LINEAR) * strength
+    return cv2.resize(b, (W, H), interpolation=cv2.INTER_LINEAR)
+
+
+def bloom(cv, thresh=0.75, strength=0.6, radius=24):
+    cv += _mul(_glare(cv, thresh, radius), strength)
 
 
 @lru_cache(maxsize=8)
 def _vig(k):
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-    return 1 - k * (((xx - W / 2) ** 2 + (yy - H / 2) ** 2) / (W * W / 2))
+    return _ch3(1 - k * (((xx - W / 2) ** 2 + (yy - H / 2) ** 2) / (W * W / 2)))
 
 
 def vignette(cv, k=0.35):
-    cv *= _vig(k)[..., None]
+    cv *= _vig(k)
 
 
 def finish(cv, bloom_k=0.5, gamma=0.88, vig=0.32):
     """Bloom, vignette and gamma: the last step of a frame."""
-    if bloom_k:
-        bloom(cv, 0.72, bloom_k)
-    if vig:
-        vignette(cv, vig)
-    if gamma != 1.0:
-        np.power(np.clip(cv, 0, None, out=cv), gamma, out=cv)
+    glare = _glare(cv, 0.72, 24) if bloom_k else None
+    v = _vig(vig) if vig else None
+    for s in _bands(len(cv)):
+        c = cv[s]
+        if glare is not None:
+            c += _mul(glare[s], bloom_k)
+        if v is not None:
+            c *= v[s]
+        if gamma != 1.0:
+            # cv2.pow is 5x np.power, within a few float32 ulps of it (a pixel in ~10^5 lands 1/255 apart)
+            cv2.pow(np.clip(c, 0, None, out=c), gamma, dst=c)
     return cv
