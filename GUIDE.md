@@ -69,4 +69,4 @@ Every earlier video scored 3–7. The same complaints come back each time, so de
 - Randomness comes from fixed seeds (`np.random.RandomState(k)`, `C.seed("name")`). Never `hash()`: it changes every
   process, so chunks rendered in different processes disagree.
 - Every frame must render on its own from t alone. No state carried between frames; chunks render in parallel.
-- Memory: the box has 23 GB. A full render is 5 processes (PROCS); don't run two renders at once.
+- Memory: the box has 23 GB. A full render is 4 processes (PROCS); don't run two renders at once.

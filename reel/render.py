@@ -7,7 +7,7 @@ and, optionally, shot_of(i) -> shot index for the sheet labels. Its directory is
     python -m reel.render sheet DIR [--step 0.5]    contact sheets, 30 labelled frames each
     python -m reel.render clip T0 T1 PATH           a short mp4 of [T0, T1) with audio
 
-Chunks are CHUNK frames each, rendered in PROCS processes (env PROCS, default 5) into work/chunks/ (drafts:
+Chunks are CHUNK frames each, rendered in PROCS processes (env PROCS, default 4) into work/chunks/ (drafts:
 work/chunks-draft/), slowest first by the times of the last render there (times.json).
 """
 import argparse, importlib.util, json, os, subprocess, sys, time
@@ -22,7 +22,7 @@ from . import core as C
 from .project import project
 
 CHUNK = 60
-PROCS = int(os.environ.get("PROCS", "5"))
+PROCS = int(os.environ.get("PROCS", "4"))  # one per core: renders are memory-bound, and 5 or 6 were no faster
 _shots = None
 
 
