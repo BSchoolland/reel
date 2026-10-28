@@ -139,8 +139,9 @@ been importing whatever reel the venv had installed (here: ~/Projects/reel), not
 - **Decoded art in a shared, memory-mapped cache** (work/cache/art/*.npy, copy-on-write). Peak memory 6.58 → 5.52 GB at
   P5, but the first render pays the writes (242.9 s vs 224.0), and warps from a mapped array were 6% slower
   (10.7 vs 11.4 ms) because file mappings use 4 KB pages where numpy's arrays get huge pages. Memory isn't the limit
-  at P4, so I dropped it. PNG decoding is 3-7% of the one-process profiles (each worker decodes every image it
-  uses); an uncompressed cache read into ordinary memory could win back some of it.
+  at P4, so I dropped it. PNG decoding looks big in the 64-frame profiles (3-7%), but that's one pass over nearly
+  every image, which is what each worker does once per render: ~1 s per worker, under 1% of a full render. Not
+  worth a cache.
 - `np.maximum` in place of `np.clip`: same speed (4.35 vs 4.38 ms). `vgrad` through `cv2.repeat` / nearest
   `cv2.resize`: 1.5-3 ms a call, ~1% of a frame, not worth the code.
 - **Band-wise warps.** `warpAffine` into a band with a shifted matrix rounds its fixed-point coordinates differently,
@@ -157,5 +158,6 @@ been importing whatever reel the venv had installed (here: ~/Projects/reel), not
 ## What's left
 
 Director code now dominates: in 9057278, `benbot.draw` (24%) and the cv2.GaussianBlur calls it and `kit` make (15%)
-are the two biggest items. reel can't change those without changing director code. Of reel's own time,
-warpAffine and the per-process PNG decode are the largest, at 5-7% each.
+are the two biggest items. reel can't change those without changing director code. Of reel's own time, warpAffine
+(sprite and camera warps, 5-7%) is the largest; the x264 encode is ~90 ms of CPU a frame, about a fifth of the
+render, at the master's unchanged preset.
