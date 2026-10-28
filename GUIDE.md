@@ -52,7 +52,12 @@ Every earlier video scored 3–7. The same complaints come back each time, so de
 - **Off-model characters, seams, boxes.** Compare every character against its reference at full size. Look for plate
   edges, visible compositing rectangles and halos from keying.
 - **The muted first three seconds.** Feeds autoplay muted. Something must read and move from frame 0.
-- **Captions on screen long enough to read twice**, legible on a phone.
+- **Captions on screen long enough to read twice**, legible on a phone, and inside their box: text that spills out of
+  its window or off the frame edge is the most common bug critics find. Check every caption and label at full size.
+- **A climax the music doesn't lift.** If the song has no drop where the payoff lands, make one: mute a beat before it
+  and slam back in with an impact (`sfx.mix` mutes + `blast`/`thud`), or a riser into it.
+- **Transformations that undo themselves.** Once a character changes form, it stays changed until the story says
+  otherwise; and give it contrast against what it turns into (a pink galaxy on a pink galaxy vanishes).
 
 ## Working
 
