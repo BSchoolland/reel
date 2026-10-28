@@ -77,6 +77,8 @@ def test_render_measure_deliver(proj):
     dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
                                capture_output=True, text=True, check=True).stdout)
     assert abs(dur - DUR) < 0.1
+    times = json.loads((proj / "work/chunks/times.json").read_text())
+    assert sorted(times) == [str(k) for k in range((round(DUR * 30) + 59) // 60)], times
     m = run(proj, "reel.qa", "measure", str(out))
     assert "cuts=2 " in m, m
     assert "cuts on an onset (within 50 ms): 2/2" in m, m

@@ -6,9 +6,10 @@ and, optionally, shot_of(i) -> shot index for the sheet labels. Its directory is
     python -m reel.render sheet DIR [--step 0.5]    contact sheets, 30 labelled frames each
     python -m reel.render clip T0 T1 PATH           a short mp4 of [T0, T1) with audio
 
-Chunks are CHUNK frames each, rendered in PROCS processes (env PROCS, default 5) into work/chunks/.
+Chunks are CHUNK frames each, rendered in PROCS processes (env PROCS, default 5) into work/chunks/, slowest first by
+the times of the last render (work/chunks/times.json).
 """
-import argparse, importlib.util, os, subprocess, sys, time
+import argparse, importlib.util, json, os, subprocess, sys, time
 import multiprocessing as mp
 
 import numpy as np
@@ -35,7 +36,10 @@ def shots():
 
 
 def frame(i):
-    return (np.clip(shots().frame(i), 0, 1) * 255 + 0.5).astype(np.uint8)
+    f = np.clip(shots().frame(i), 0, 1)
+    f *= 255
+    f += 0.5
+    return f.astype(np.uint8)
 
 
 def chunk_dir():
@@ -66,7 +70,7 @@ def render_chunk(k):
     t0 = time.time()
     p = writer(tmp)
     for i in range(a, b):
-        p.stdin.write(frame(i).tobytes())
+        p.stdin.write(frame(i))
     _close(p, tmp)
     os.replace(tmp, chunk_dir() / f"c{k:03d}.mp4")
     return k, time.time() - t0
@@ -74,10 +78,16 @@ def render_chunk(k):
 
 def run_chunks(ks, procs=PROCS):
     shots()  # import once here so forked workers inherit it
+    tf = chunk_dir() / "times.json"
+    times = {int(k): v for k, v in json.loads(tf.read_text()).items()} if tf.exists() else {}
+    # slowest first, so the last chunks to finish are short ones; chunks with no time yet keep their order, in front
+    ks = sorted(ks, key=lambda k: -times.get(k, float("inf")))
     t0 = time.time()
     with mp.Pool(procs) as pool:
         for k, dt in pool.imap_unordered(render_chunk, ks):
+            times[k] = round(dt, 2)
             print(f"chunk {k} {dt:.0f}s  ({time.time() - t0:.0f}s)", flush=True)
+    tf.write_text(json.dumps({str(k): times[k] for k in sorted(times)}))
 
 
 def concat_mux(out):
@@ -136,7 +146,7 @@ def clip(t0, t1, out):
     tmp = f"{out}.v.mp4"
     p = writer(tmp)
     for i in range(a, b):
-        p.stdin.write(frame(i).tobytes())
+        p.stdin.write(frame(i))
     _close(p, tmp)
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", tmp, "-ss", f"{t0:.3f}", "-t", f"{t1 - t0:.3f}",
                     "-i", project().audio, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-shortest", out],
