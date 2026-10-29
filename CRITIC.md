@@ -15,8 +15,8 @@ ffmpeg and ffprobe are on PATH.
 5. The first 3 seconds with the sound off, caption legibility and hold time, the ending.
 
 Judge it as the brief's audience would see it in their feed: would they stop scrolling, react, and get it?
-Write {OUT}: first line exactly "Verdict: YES" or "Verdict: NO" to "Is this good enough to post as-is?", second line
-exactly "Score: <0-10>", then one or two sentences on why.
+Write {OUT}: first line exactly "Verdict: YES" or "Verdict: NO" to "Is this good enough to post as-is?", then one or
+two sentences on why. No numeric score.
 Then: fidelity to the brief's idea, the jokes (do they land, is the timing right), the money shots (real motion?),
 character fidelity and animation, style consistency, sync to the music (any point where the music cuts out is a
 defect: it plays as a glitch), the muted first 3 s, the ending, polish

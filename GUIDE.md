@@ -38,7 +38,7 @@ reel with a test rather than to your project.
 
 ## What the critics keep saying
 
-Every earlier video scored 3–7. The same complaints come back each time, so design against them from the start:
+The same complaints come back on every video, so design against them from the start:
 
 - **Cuts that ignore the music.** Snap every cut to a measured onset (`B.snap`); use the grid only where there are no
   onsets. A grid 78 ms late made cuts miss the music for four versions of one video.
