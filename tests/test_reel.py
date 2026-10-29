@@ -109,3 +109,26 @@ def test_seed_is_stable_across_processes(proj):
     a = [subprocess.run([PY, "-c", code], cwd=proj, capture_output=True, text=True, check=True, env=ENV).stdout
          for _ in range(2)]
     assert a[0] == a[1]
+
+
+def test_art_failure_reasons():
+    from reel.art import failure
+    mod = 'http 400 Bad Request: "code": "moderation_blocked" ... request ID 1002ed90-7c58-4aaf-8b87-a8fa14294072'
+    assert failure(mod) == "moderation"
+    assert failure("stream error: unexpected status 429 Too Many Requests") == "limit"
+    assert failure('{"type": "usage_limit_reached"}') == "limit"
+    assert failure("http 401 Unauthorized") == "auth"
+    assert failure("session id: 01a185bd-4d51-7429-bf5b-acf577509db0\ndone, no tool call") is None
+
+
+def test_limit_caps_peaks_and_leaves_the_rest():
+    from reel import sfx
+    n = sfx.SR * 2
+    x = np.zeros((n, 2), np.float32)
+    x[:, 0] = 0.3 * np.sin(np.arange(n) / sfx.SR * 2 * np.pi * 220)
+    x[:, 1] = x[:, 0]
+    x[sfx.SR: sfx.SR + 2000] += 2.5  # a hit far over full scale
+    y = sfx.limit(x, ceil_db=-2.0)
+    assert np.abs(y).max() <= 10 ** (-2 / 20) + 1e-6
+    far = slice(0, sfx.SR // 2)
+    assert np.allclose(y[far], x[far])

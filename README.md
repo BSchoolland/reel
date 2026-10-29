@@ -9,3 +9,7 @@ the V2V videos rebuilt in each project, pulled into one library. A video project
 
 Setup: `uv venv --python 3.10 .venv && uv pip install --python .venv/bin/python -e . pytest`. Needs ffmpeg, and
 `codex` logged in for `reel.art`.
+
+## License
+
+MIT. The bundled fonts (Inter, DM Sans, IBM Plex Mono, Space Mono) are under the SIL Open Font License.

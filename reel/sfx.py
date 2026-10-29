@@ -107,6 +107,22 @@ def mute_gain(n, a, b, fade=0.006):
     return g
 
 
+def limit(x, ceil_db=-3.0, look=0.005, hold=0.03):
+    """Lookahead peak limiter for an (n, channels) signal: no sample above ceil_db dBFS, everything under it untouched.
+    The ceiling sits below 0 dB because the AAC encode overshoots sample peaks: a mix peaking at 0 dBFS comes out of
+    the master clipping. Gain dips start `look` s before a peak and hold `hold` s after it."""
+    from scipy.ndimage import minimum_filter1d, uniform_filter1d
+    c = 10 ** (ceil_db / 20)
+    pk = np.abs(x).max(axis=1) if x.ndim == 2 else np.abs(x)
+    g = np.minimum(1.0, c / np.maximum(pk, 1e-9))
+    L = max(1, int(look * SR))
+    g = minimum_filter1d(g, 2 * L + 1)
+    g = minimum_filter1d(g, max(1, int(hold * SR)) | 1)
+    g = uniform_filter1d(g, L + 1)
+    y = x * (g[:, None] if x.ndim == 2 else g)
+    return np.clip(y, -c, c).astype(np.float32)
+
+
 def mix(cues, mutes=(), song=None, out=None):
     """Song + mutes + cues -> a 16-bit stereo wav (default the project's song -> work/mix.wav). Returns the out path."""
     if song is None or out is None:
@@ -128,8 +144,7 @@ def mix(cues, mutes=(), song=None, out=None):
         x[i:j, 0] += sig[:j - i] * gain * (1 - max(0, pan))
         x[i:j, 1] += sig[:j - i] * gain * (1 + min(0, pan))
     pk = float(np.abs(x).max())
-    if pk > 0.99:
-        x *= 0.99 / pk
+    x = limit(x)
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ac", "2", "-ar", str(SR), "-i", "-", "-c:a", "pcm_s16le",
                     str(out)], input=x.astype(np.float32).tobytes(), check=True)
     print(f"mix {out}: {n / SR:.2f}s, {len(cues)} cues, {len(mutes)} mutes, peak {pk:.2f}")

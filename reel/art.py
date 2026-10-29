@@ -50,14 +50,30 @@ def gen(name, refs=None):
         shutil.copy(imgs[-1], d / "orig" / f"{name}.png")
         log(f"{name} ok in {time.time() - t0:.0f}s")
         return EXIT_OK
-    if re.search(r"401|unauthorized", text, re.I):
+    why = failure(text)
+    if why == "moderation":
+        log(f"{name} FAIL rc={rc}: blocked by the image model's safety filter; reword the prompt and retry")
+        return EXIT_FAIL
+    if why == "auth":
         log(f"{name} AUTH rc={rc}: codex is logged out")
         return EXIT_BLOCKED
-    if re.search(r"429|usage_limit", text, re.I):
+    if why == "limit":
         log(f"{name} LIMIT rc={rc}: codex is out of usage")
         return EXIT_BLOCKED
     log(f"{name} FAIL rc={rc}: no image in the session (see logs/{name}.log)")
     return EXIT_FAIL
+
+
+def failure(text):
+    """Why a codex session made no image: moderation | auth | limit | None. Status codes match only as whole numbers
+    (request ids are hex and often contain "401" or "429")."""
+    if re.search(r"moderation_blocked|rejected by the safety system", text, re.I):
+        return "moderation"
+    if re.search(r"(?<![0-9a-f-])401(?![0-9a-f-])|unauthorized", text, re.I):
+        return "auth"
+    if re.search(r"(?<![0-9a-f-])429(?![0-9a-f-])|usage_limit", text, re.I):
+        return "limit"
+    return None
 
 
 def queue(path, par):
