@@ -61,6 +61,8 @@ Every earlier video scored 3–7. The same complaints come back each time, so de
 
 ## Working
 
+- To keep a character on-model in generated art, give the image model its reference: `python -m reel.art gen NAME
+  --refs ref.png`.
 - Check your own cut before you call it done: `render sheet`, full-size `stills` at the key moments, `qa measure`,
   `qa motion`. The critic runs the same numbers. Check renders are `render out work/draftN.mp4 --draft` (qa reads
   them the same); render the master without `--draft`.
