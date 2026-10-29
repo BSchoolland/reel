@@ -28,7 +28,7 @@ project directory, or set `REEL_PROJECT`.
 | `reel.act` | character acting, pure in t: `bob` on the beat, `blink`, `look` (eye-darts), `talk` tilt, `hop` arcs, `land_squash`, `pose` (all of it at once) |
 | `python -m reel.music [--bpm N]` | onsets + fitted beat grid -> work/audio.json. In code: `B = reel.music.beats()`, `B.snap(t)`, `B.beat(k)` |
 | `reel.sfx` | synthesized hits (`blast thud clang pop whoosh click spool hiss …`) and `sfx.mix(cues, mutes)` -> work/mix.wav |
-| `python -m reel.art gen NAME` / `queue FILE` | codex image generation with the per-cycle cap, the usage meter and auth guards |
+| `python -m reel.art gen NAME` / `queue FILE` | codex image generation (art/gen.log logs every outcome) |
 | `python -m reel.render out/stills/sheet/clip` | chunked parallel render muxed with the audio (`out --draft`: the same frames, half size, fast encode); stills; contact sheets; clips |
 | `python -m reel.qa measure/motion/sheets VIDEO` | the critic's own numbers: cut rhythm, cuts on onsets, near-static frames, local motion |
 | `python -m reel.deliver MASTER OUT` | the share encode under 9.5 MB |
