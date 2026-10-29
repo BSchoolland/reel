@@ -4,7 +4,7 @@
     python -m reel.art queue FILE [--par 3]            one "NAME [refs]" per line (# comments), PAR at once
 
 Guards:
-  - at most REEL_ART_CAP (default 40) launches per cycle; the cycle is REEL_CYCLE (default 1), counted in
+  - if REEL_ART_CAP is set, at most that many launches per cycle; the cycle is REEL_CYCLE (default 1), counted in
     art/launched-c<cycle>.txt
   - waits while the Codex 5-hour window is at or above 85%, until it resets
   - after a 401 or a usage-limit 429 every later call refuses (exit 3) until that line is removed from art/gen.log:
@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 MODEL = os.environ.get("REEL_IMAGE_MODEL", "gpt-6.1-sol")
-CAP = int(os.environ.get("REEL_ART_CAP", "40"))
+CAP = int(os.environ["REEL_ART_CAP"]) if "REEL_ART_CAP" in os.environ else None
 CYCLE = os.environ.get("REEL_CYCLE", "1")
 METER_MAX = 85
 METER_TRIES = 5
@@ -84,7 +84,7 @@ def gen(name, refs=None):
     launched = d / f"launched-c{CYCLE}.txt"
     with _launch:
         launched.touch()
-        if len(launched.read_text().splitlines()) >= CAP:
+        if CAP is not None and len(launched.read_text().splitlines()) >= CAP:
             log(f"{name} REFUSED: cycle {CYCLE} already launched {CAP} images")
             return EXIT_CAP
         with open(launched, "a") as f:

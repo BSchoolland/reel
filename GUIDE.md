@@ -58,17 +58,13 @@ Every earlier video scored 3–7. The same complaints come back each time, so de
   music: stacked impacts (`blast` + `thud` + `clang`), a riser into it, a camera slam.
 - **Never cut the music out.** No muted beats or dropouts, however dramatic they look on paper: viewers hear them as
   glitches. The song plays straight through; `sfx.mix` mutes are for trimming a song's own silence, nothing else.
-- **Transformations that undo themselves.** Once a character changes form, it stays changed until the story says
-  otherwise; and give it contrast against what it turns into (a pink galaxy on a pink galaxy vanishes).
 
 ## Working
 
-- Look at every image you generate. Reject off-style ones and anything with a logo or text the brief didn't ask for.
-  The image model redraws characters off-model; anything that must stay on-model is traced or cut out, not regenerated.
 - Check your own cut before you call it done: `render sheet`, full-size `stills` at the key moments, `qa measure`,
   `qa motion`. The critic runs the same numbers. Check renders are `render out work/draftN.mp4 --draft` (qa reads
   them the same); render the master without `--draft`.
 - Randomness comes from fixed seeds (`np.random.RandomState(k)`, `C.seed("name")`). Never `hash()`: it changes every
   process, so chunks rendered in different processes disagree.
 - Every frame must render on its own from t alone. No state carried between frames; chunks render in parallel.
-- Memory: the box has 23 GB. A full render is 4 processes (PROCS); don't run two renders at once.
+- Memory: the box has 23 GB. A full render is 4 processes (PROCS).
