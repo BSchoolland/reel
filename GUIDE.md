@@ -40,17 +40,9 @@ reel with a test rather than to your project.
 
 Every earlier video scored 3–7. The same complaints come back each time, so design against them from the start:
 
-- **"A motion comic of AI stills."** The biggest one, in every project. Generated images held with a push-in, or
-  characters that swap between a few poses, read as a slideshow. Characters are cut-outs or vector rigs you animate:
-  squash, stretch, lean, settle, overshoot. Backgrounds are parallax layers. The money shot is real motion with
-  velocity, deceleration, contact squash, particles and shake. Run `reel.qa motion` and look at the stillest seconds.
-- **The climax is the weakest part.** It's what people remember. Spend the most motion and the best joke there, and
-  give the payoff gag time to land (a second or more).
 - **Cuts that ignore the music.** Snap every cut to a measured onset (`B.snap`); use the grid only where there are no
-  onsets. A grid 78 ms late made cuts miss the music for four versions of one video. Median shot ~1.2–1.5 s, varied.
+  onsets. A grid 78 ms late made cuts miss the music for four versions of one video.
 - **One gag held for the whole video gets old.** Each section gets its own idea.
-- **Off-model characters, seams, boxes.** Compare every character against its reference at full size. Look for plate
-  edges, visible compositing rectangles and halos from keying.
 - **The muted first three seconds.** Feeds autoplay muted. Something must read and move from frame 0.
 - **Captions on screen long enough to read twice**, legible on a phone, and inside their box: text that spills out of
   its window or off the frame edge is the most common bug critics find. Check every caption and label at full size.
